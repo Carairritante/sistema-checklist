@@ -1,10 +1,12 @@
 const express = require('express');
-// 1. Unificamos os imports aqui no topo
+const cors = require('cors'); // CORS adicionado aqui
 const { Client, RemoteAuth } = require('whatsapp-web.js');
 const { createClient } = require('@supabase/supabase-js');
 const QRCode = require('qrcode');
 
 const app = express();
+
+app.use(cors()); // CORS ativado para o seu dashboard acessar
 app.use(express.json());
 
 const PORT = process.env.PORT || 10000;
@@ -15,7 +17,6 @@ const supabase = createClient(
 );
 
 // ── PERSISTÊNCIA NO SUPABASE ────────────────────────────────
-// Isso evita que sua mãe tenha que ler o QR Code todo dia!
 class SupabaseStore {
   async sessionExists({ session }) {
     const { data } = await supabase.storage
@@ -48,7 +49,7 @@ class SupabaseStore {
 let qrCodeData = null;
 let isReady = false;
 
-// 2. Inicializamos o cliente apenas UMA vez usando a estratégia RemoteAuth
+// Inicializamos o cliente usando a estratégia RemoteAuth
 const client = new Client({
     authStrategy: new RemoteAuth({
         store: new SupabaseStore(),
@@ -62,7 +63,6 @@ const client = new Client({
             '--disable-dev-shm-usage',
             '--no-zygote'
         ]
-        // Dica: Removi o executablePath para o Docker usar o Chrome interno dele
     }
 });
 
@@ -75,7 +75,7 @@ client.on('loading_screen', (percent, message) => {
 client.on('qr', async (qr) => {
   qrCodeData = await QRCode.toDataURL(qr);
   isReady = false;
-  console.log('✅ QR code gerado! Acesse a rota /qr para escanear.');
+  console.log('✅ QR code gerado! Pronto para o dashboard puxar.');
 });
 
 client.on('ready', () => {
@@ -124,12 +124,11 @@ app.get('/status', (req, res) => {
   res.json({ connected: isReady, hasQr: !!qrCodeData });
 });
 
+// Rota em formato JSON para o Next.js conseguir ler
 app.get('/qr', (req, res) => {
-  if (isReady) return res.send('<h1>WhatsApp já está conectado!</h1>');
-  if (!qrCodeData) return res.send('<h1>Aguardando geração do QR Code... Atualize em instantes.</h1>');
-  
-  // Retorna uma página simples para ver o QR Code
-  res.send(`<img src="${qrCodeData}" style="display:block;margin:auto;">`);
+  if (isReady) return res.json({ connected: true, qr: null });
+  if (!qrCodeData) return res.json({ connected: false, qr: null, message: 'Aguardando QR...' });
+  res.json({ connected: false, qr: qrCodeData });
 });
 
 app.post('/send', async (req, res) => {

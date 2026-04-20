@@ -1,0 +1,16 @@
+name: Keep Alive
+
+on:
+  schedule:
+    - cron: '*/14 * * * *'
+  workflow_dispatch:
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Ping checklist app
+        run: curl -s --max-time 30 "${{ secrets.RENDER_APP_URL }}" -o /dev/null -w "App status: %{http_code}\n"
+
+      - name: Ping whatsapp service
+        run: curl -s --max-time 30 "${{ secrets.RENDER_WA_URL }}/status" -o /dev/null -w "WA status: %{http_code}\n"

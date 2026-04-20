@@ -1,0 +1,37 @@
+services:
+  # ── Aplicação Next.js ──────────────────────────────────────
+  - type: web
+    name: checklist-app
+    runtime: node
+    plan: free
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NEXT_PUBLIC_SUPABASE_URL
+        sync: false
+      - key: NEXT_PUBLIC_SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: WHATSAPP_SERVICE_URL
+        sync: false
+      - key: NODE_ENV
+        value: production
+
+  # ── Serviço WhatsApp (Node.js / Express) ──────────────────
+  - type: web
+    name: whatsapp-service
+    runtime: node
+    plan: free
+    rootDir: whatsapp-server
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: PORT
+        value: "10000"
+      - key: NODE_ENV
+        value: production

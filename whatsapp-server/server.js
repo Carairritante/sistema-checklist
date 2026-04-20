@@ -54,17 +54,34 @@ const client = new Client({
   }),
   puppeteer: {
     headless: true,
+    executablePath: process.env.NODE_ENV === 'production' 
+      ? '/usr/bin/google-chrome-stable' 
+      : undefined,
     args: [
       '--no-sandbox',
       '--disable-setuid-sandbox',
       '--disable-dev-shm-usage',
       '--disable-gpu',
-      '--disable-extensions',
+      '--no-zygote',
       '--single-process',
+      '--disable-extensions',
+      '--disable-background-networking',
+      '--disable-features=TranslateUI',
+      '--disable-setuid-sandbox',
     ],
   },
 });
+client.on('loading_screen', (percent, message) => {
+  console.log(`📡 Carregando WhatsApp: ${percent}% - ${message}`);
+});
 
+client.on('auth_failure', (msg) => {
+  console.error('❌ AUTH FAILURE:', msg);
+});
+
+client.initialize().catch(err => {
+  console.error('❌ ERRO CRÍTICO NO INITIALIZE:', err);
+});
 client.on('qr', async (qr) => {
   qrCodeData = await QRCode.toDataURL(qr);
   isReady = false;

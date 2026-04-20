@@ -6,7 +6,7 @@ const QRCode = require('qrcode');
 const app = express();
 app.use(express.json());
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 10000;
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -46,30 +46,21 @@ class SupabaseStore {
 let qrCodeData = null;
 let isReady = false;
 
+const { Client, LocalAuth } = require('whatsapp-web.js');
+
 const client = new Client({
-  authStrategy: new RemoteAuth({
-    clientId: 'checklist',
-    store: new SupabaseStore(),
-    backupSyncIntervalMs: 300000,
-  }),
-  puppeteer: {
-    headless: true,
-    executablePath: process.env.NODE_ENV === 'production' 
-      ? '/usr/bin/google-chrome-stable' 
-      : undefined,
-    args: [
-      '--no-sandbox',
-      '--disable-setuid-sandbox',
-      '--disable-dev-shm-usage',
-      '--disable-gpu',
-      '--no-zygote',
-      '--single-process',
-      '--disable-extensions',
-      '--disable-background-networking',
-      '--disable-features=TranslateUI',
-      '--disable-setuid-sandbox',
-    ],
-  },
+    authStrategy: new LocalAuth(), // Salva a sessão localmente
+    puppeteer: {
+        headless: true,
+        args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--no-zygote'
+        ],
+        // No Render/Linux, o caminho do Chrome é instalado pelo apt-get
+        executablePath: '/usr/bin/google-chrome-stable' 
+    }
 });
 client.on('loading_screen', (percent, message) => {
   console.log(`📡 Carregando WhatsApp: ${percent}% - ${message}`);
@@ -153,7 +144,6 @@ app.post('/send', async (req, res) => {
 
 // ── Start ────────────────────────────────────────────────────
 
-app.listen(PORT, () => {
-  console.log(`WhatsApp service rodando na porta ${PORT}`);
-  client.initialize().catch((err) => console.error('Erro ao inicializar:', err));
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
 });

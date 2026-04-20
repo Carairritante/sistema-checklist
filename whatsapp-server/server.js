@@ -1,4 +1,5 @@
 const express = require('express');
+// 1. Unificamos os imports aqui no topo
 const { Client, RemoteAuth } = require('whatsapp-web.js');
 const { createClient } = require('@supabase/supabase-js');
 const QRCode = require('qrcode');
@@ -13,7 +14,8 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Persiste sessão no Supabase Storage — QR só necessário uma vez
+// ── PERSISTÊNCIA NO SUPABASE ────────────────────────────────
+// Isso evita que sua mãe tenha que ler o QR Code todo dia!
 class SupabaseStore {
   async sessionExists({ session }) {
     const { data } = await supabase.storage
@@ -46,10 +48,12 @@ class SupabaseStore {
 let qrCodeData = null;
 let isReady = false;
 
-const { Client, LocalAuth } = require('whatsapp-web.js');
-
+// 2. Inicializamos o cliente apenas UMA vez usando a estratégia RemoteAuth
 const client = new Client({
-    authStrategy: new LocalAuth(), // Salva a sessão localmente
+    authStrategy: new RemoteAuth({
+        store: new SupabaseStore(),
+        backupSyncIntervalMs: 300000 // Salva o backup a cada 5 min
+    }),
     puppeteer: {
         headless: true,
         args: [
@@ -57,42 +61,48 @@ const client = new Client({
             '--disable-setuid-sandbox',
             '--disable-dev-shm-usage',
             '--no-zygote'
-        ],
-        // No Render/Linux, o caminho do Chrome é instalado pelo apt-get
-        executablePath: '/usr/bin/google-chrome-stable' 
+        ]
+        // Dica: Removi o executablePath para o Docker usar o Chrome interno dele
     }
 });
+
+// ── EVENTOS DO WHATSAPP ──────────────────────────────────────
+
 client.on('loading_screen', (percent, message) => {
   console.log(`📡 Carregando WhatsApp: ${percent}% - ${message}`);
 });
 
-client.on('auth_failure', (msg) => {
-  console.error('❌ AUTH FAILURE:', msg);
-});
-
-client.initialize().catch(err => {
-  console.error('❌ ERRO CRÍTICO NO INITIALIZE:', err);
-});
 client.on('qr', async (qr) => {
   qrCodeData = await QRCode.toDataURL(qr);
   isReady = false;
-  console.log('QR code gerado');
+  console.log('✅ QR code gerado! Acesse a rota /qr para escanear.');
 });
 
 client.on('ready', () => {
   isReady = true;
   qrCodeData = null;
-  console.log('WhatsApp conectado!');
+  console.log('🚀 WhatsApp conectado e pronto!');
 });
 
 client.on('remote_session_saved', () => {
-  console.log('Sessão salva no Supabase Storage');
+  console.log('💾 Sessão salva com sucesso no Supabase Storage!');
+});
+
+client.on('auth_failure', (msg) => {
+  console.error('❌ Falha na autenticação:', msg);
 });
 
 client.on('disconnected', () => {
   isReady = false;
-  console.log('WhatsApp desconectado');
+  console.log('⚠️ WhatsApp desconectado');
 });
+
+// Inicializa o serviço
+client.initialize().catch(err => {
+  console.error('❌ ERRO CRÍTICO NO INITIALIZE:', err);
+});
+
+// ── FUNÇÕES AUXILIARES ───────────────────────────────────────
 
 async function getAdminNumbers() {
   const { data, error } = await supabase
@@ -108,16 +118,18 @@ function formatNumber(numero) {
   return digits.endsWith('@c.us') ? digits : `${digits}@c.us`;
 }
 
-// ── Rotas ────────────────────────────────────────────────────
+// ── ROTAS API ────────────────────────────────────────────────
 
 app.get('/status', (req, res) => {
   res.json({ connected: isReady, hasQr: !!qrCodeData });
 });
 
 app.get('/qr', (req, res) => {
-  if (isReady) return res.json({ connected: true, qr: null });
-  if (!qrCodeData) return res.json({ connected: false, qr: null, message: 'Aguardando QR...' });
-  res.json({ connected: false, qr: qrCodeData });
+  if (isReady) return res.send('<h1>WhatsApp já está conectado!</h1>');
+  if (!qrCodeData) return res.send('<h1>Aguardando geração do QR Code... Atualize em instantes.</h1>');
+  
+  // Retorna uma página simples para ver o QR Code
+  res.send(`<img src="${qrCodeData}" style="display:block;margin:auto;">`);
 });
 
 app.post('/send', async (req, res) => {
@@ -126,24 +138,19 @@ app.post('/send', async (req, res) => {
   if (!isReady) return res.status(503).json({ error: 'WhatsApp não conectado' });
 
   const numbers = await getAdminNumbers();
-  if (numbers.length === 0) return res.status(404).json({ error: 'Nenhum número admin cadastrado' });
+  if (numbers.length === 0) return res.status(404).json({ error: 'Nenhum número admin cadastrado no Supabase' });
 
   console.log(`Enviando para ${numbers.length} número(s)`);
   const results = await Promise.allSettled(
     numbers.map((n) => client.sendMessage(formatNumber(n), message))
   );
 
-  results.forEach((r, i) => {
-    if (r.status === 'rejected') console.error(`Falha ${numbers[i]}:`, r.reason?.message);
-  });
-
   const sent = results.filter((r) => r.status === 'fulfilled').length;
-  console.log(`Enviado: ${sent}/${numbers.length}`);
   res.json({ sent, total: numbers.length });
 });
 
-// ── Start ────────────────────────────────────────────────────
+// ── START ────────────────────────────────────────────────────
 
 app.listen(PORT, '0.0.0.0', () => {
-    console.log(`Servidor rodando na porta ${PORT}`);
+    console.log(`✅ Servidor rodando na porta ${PORT}`);
 });
